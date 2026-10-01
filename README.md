@@ -1,28 +1,98 @@
 # 2D Cable Curvature Measurement with ArUco Calibration
 
-A Python and OpenCV application for measuring the two-dimensional curvature and radius of curvature of a flexible cable, hose, tube, or other dark elongated object moving over a light planar background.
+A Python and OpenCV proof of concept for measuring the two-dimensional curvature and radius of curvature of a flexible cable, hose, tube, or other dark elongated object over a light planar background.
 
 The application supports:
 
 - video files and live webcams;
-- automatic or manual image thresholding;
+- planar metric calibration with four ArUco markers;
+- perspective rectification to a top-down view;
+- configurable margins outside the ArUco marker rectangle;
+- automatic Otsu or manual thresholding;
 - binary-mask cleanup and connected-component filtering;
 - skeleton-based centerline extraction;
 - geodesic ordering of skeleton pixels;
 - smoothed parametric spline fitting;
 - signed curvature and radius-of-curvature estimation;
-- planar metric calibration with four ArUco markers;
-- perspective rectification to a top-down view;
 - camera-pose visualization relative to the ArUco layout;
-- an interactive dashboard with playback, seeking, sliders, plots, and snapshots.
+- an interactive dashboard with playback controls, seeking, sliders, plots, and snapshots.
 
-> This is a proof-of-concept measurement tool. Validate the complete setup against independent physical references before treating the output as metrology-grade data.
+> This project is a proof of concept. Validate the complete setup against independent physical references before treating the output as metrology-grade data.
 
 ## Main script
 
 ```text
-curvatura_2d_aruco_dashboard_v2.py
+2d_curvature.py
 ```
+
+## Project structure
+
+The following structure is recommended:
+
+```text
+2d_curvature/
+├── 2d_curvature.py
+├── README.md
+├── sample_videos/
+│   └── cable_curvature_demo.mp4
+├── snapshots/
+├── calibration_aruco.json
+└── requirements.txt
+```
+
+The suggested folder name for test videos is:
+
+```text
+sample_videos/
+```
+
+The suggested test-video filename is:
+
+```text
+cable_curvature_demo.mp4
+```
+
+The test video will be stored in that folder and can be executed with:
+
+```bash
+python 2d_curvature.py --video sample_videos/cable_curvature_demo.mp4
+```
+
+On Windows, either forward slashes or escaped backslashes may be used:
+
+```cmd
+python 2d_curvature.py --video "sample_videos\cable_curvature_demo.mp4"
+```
+
+## Video demonstration
+
+A demonstration video can be added below after uploading it through the GitHub README editor.
+
+<!--
+Replace the placeholder below with the GitHub user-attachment URL generated
+when the MP4 file is dragged into the README editor.
+
+Example:
+https://github.com/user-attachments/assets/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+-->
+
+**Demo video:** _add the uploaded video URL here_
+
+<!-- VIDEO_PLACEHOLDER_START -->
+
+https://github.com/user-attachments/assets/REPLACE-WITH-VIDEO-ID
+
+<!-- VIDEO_PLACEHOLDER_END -->
+
+The demonstration should ideally show:
+
+- detection of the four ArUco markers;
+- planar calibration;
+- the original and rectified views;
+- cable segmentation and the binary mask;
+- centerline extraction;
+- curvature and radius plots;
+- playback controls and parameter sliders.
 
 ## Processing pipeline
 
@@ -60,31 +130,43 @@ Signed curvature and radius of curvature
 Dashboard, plots, pose view, CSV, and PNG snapshots
 ```
 
-## ArUco marker generation and calibration assets
+## ArUco and ChArUco assets
 
-The ArUco marker images and ChArUco utilities used with this project can be generated with the companion repository:
+ArUco marker images and ChArUco calibration assets can be generated with the companion repository:
 
 - [casfervi/aruco_charuco](https://github.com/casfervi/aruco_charuco)
 
-For the default four-marker arrangement, generate or use marker IDs **0, 1, 2, and 3** from the same OpenCV dictionary configured in this application. The current default dictionary is:
+For the default marker arrangement, generate marker IDs:
+
+```text
+0, 1, 2, 3
+```
+
+The default OpenCV dictionary used by this application is:
 
 ```text
 DICT_5X5_250
 ```
 
-The companion repository includes utilities for:
+The same dictionary must be used for marker generation and marker detection. Marker ID `2` from `DICT_5X5_250`, for example, is not the same binary pattern as marker ID `2` from `DICT_4X4_50`.
 
-- generating ArUco marker images;
-- generating multiple marker IDs, including IDs 0 through 3;
-- generating a ChArUco board;
-- testing ArUco pose estimation;
-- preparing intrinsic camera calibration assets.
+Example marker-generation command in the companion repository:
 
-The dictionary used to generate the markers must be identical to the dictionary supplied to this application. For example, marker ID 2 from `DICT_5X5_250` is not the same binary pattern as marker ID 2 from `DICT_4X4_50`.
+```bash
+python aruco_generation.py \
+  --num-markers 4 \
+  --start-id 0 \
+  --dictionary DICT_5X5_250 \
+  --output-dir markers
+```
+
+The companion repository also contains ChArUco utilities that can be used to prepare intrinsic camera-calibration assets.
 
 ## Default physical marker layout
 
-Place four markers on the same plane as the cable. The default ID ordering is:
+Place the four markers on the same physical plane as the cable.
+
+The default arrangement is:
 
 ```text
 ID 0  ----------------------  ID 1
@@ -116,13 +198,11 @@ use:
 --aruco-ids 2 3 1 0
 ```
 
-## Physical measurement definitions
+## Physical measurement arguments
 
 ### `--aruco-size`
 
-The physical side length, in millimeters, of the external black square of each ArUco marker.
-
-Example:
+Physical side length, in millimeters, of the external black square of each ArUco marker.
 
 ```bash
 --aruco-size 20
@@ -130,9 +210,9 @@ Example:
 
 ### `--aruco-spacing`
 
-The physical **center-to-center** distance between neighboring markers, in millimeters.
+Physical center-to-center distance between neighboring markers, in millimeters.
 
-Two values represent horizontal and vertical spacing:
+Two values define horizontal and vertical spacing:
 
 ```bash
 --aruco-spacing 225 130
@@ -145,31 +225,90 @@ This means:
 130 mm vertically between marker centers
 ```
 
-One value creates a square center layout:
+One value defines equal horizontal and vertical spacing:
 
 ```bash
 --aruco-spacing 225
 ```
 
-Do not use edge-to-edge spacing without converting it to center-to-center spacing.
+Do not use edge-to-edge measurements without converting them to center-to-center spacing.
+
+### `--aruco-margin`
+
+Adds a physical margin, in millimeters, around all four sides of the marker rectangle in the rectified image.
+
+```bash
+--aruco-margin 40
+```
+
+This allows the rectified image to include regions beyond the ArUco markers, provided those regions remain on the same physical plane.
+
+For example, with:
+
+```text
+marker size:       20 mm
+horizontal space: 225 mm
+vertical space:   130 mm
+margin:            40 mm on each side
+```
+
+the rectified physical area becomes:
+
+```text
+width  = 225 + 20 + 2 x 40 = 325 mm
+height = 130 + 20 + 2 x 40 = 230 mm
+```
+
+A large margin causes the homography to extrapolate farther outside the marker rectangle. Measurements are normally most reliable inside or near the calibrated marker region.
 
 ## Installation
 
-Create and activate a virtual environment, then install the dependencies.
+The virtual environment name used by this project is:
+
+```text
+2d_curvature
+```
 
 ### Windows
 
+Create the environment:
+
 ```cmd
-python -m venv gimbal
-gimbal\Scripts\activate
+python -m venv 2d_curvature
+```
+
+Activate it in Command Prompt:
+
+```cmd
+2d_curvature\Scripts\activate
+```
+
+Activate it in PowerShell:
+
+```powershell
+.\2d_curvature\Scripts\Activate.ps1
+```
+
+Install the dependencies:
+
+```cmd
+python -m pip install --upgrade pip
 pip install opencv-contrib-python numpy scipy scikit-image matplotlib
 ```
 
 ### Linux or macOS
 
+Create and activate the environment:
+
 ```bash
-python3 -m venv gimbal
-source gimbal/bin/activate
+python3 -m venv 2d_curvature
+source 2d_curvature/bin/activate
+```
+
+Install the dependencies:
+
+```bash
+python -m pip install --upgrade pip
 pip install opencv-contrib-python numpy scipy scikit-image matplotlib
 ```
 
@@ -179,7 +318,7 @@ pip install opencv-contrib-python numpy scipy scikit-image matplotlib
 python -c "import cv2; print(cv2.__version__); print(hasattr(cv2, 'aruco')); print(hasattr(cv2.aruco, 'ArucoDetector'))"
 ```
 
-The final two values should normally be:
+The last two values should be:
 
 ```text
 True
@@ -188,150 +327,126 @@ True
 
 Avoid installing incompatible versions of `opencv-python` and `opencv-contrib-python` in the same environment because both packages provide the `cv2` module.
 
-## Basic usage
+## Quick start with the test video
 
-### Process a video with ArUco calibration
+Assuming the test video is stored at:
+
+```text
+sample_videos/cable_curvature_demo.mp4
+```
+
+run:
 
 ```bash
-python curvatura_2d_aruco_dashboard_v2.py \
-  --video cable.mp4 \
+python 2d_curvature.py \
+  --video sample_videos/cable_curvature_demo.mp4 \
   --aruco-size 20 \
   --aruco-spacing 225 130 \
   --aruco-dict DICT_5X5_250 \
-  --aruco-ids 0 1 2 3
+  --aruco-ids 0 1 2 3 \
+  --aruco-margin 40 \
+  --calibration-frames 5
 ```
 
-### Process a video with a custom physical ID arrangement
+Windows Command Prompt version:
+
+```cmd
+python 2d_curvature.py ^
+  --video "sample_videos\cable_curvature_demo.mp4" ^
+  --aruco-size 20 ^
+  --aruco-spacing 225 130 ^
+  --aruco-dict DICT_5X5_250 ^
+  --aruco-ids 0 1 2 3 ^
+  --aruco-margin 40 ^
+  --calibration-frames 5
+```
+
+Adjust the marker size, center-to-center spacing, ID order, and margin to match the real test setup.
+
+## Additional usage examples
+
+### Custom marker arrangement
 
 ```bash
-python curvatura_2d_aruco_dashboard_v2.py \
-  --video cable.mp4 \
+python 2d_curvature.py \
+  --video sample_videos/cable_curvature_demo.mp4 \
   --aruco-size 20 \
   --aruco-spacing 225 130 \
   --aruco-dict DICT_5X5_250 \
   --aruco-ids 2 3 1 0
 ```
 
-### Use a webcam
+### Webcam
 
 ```bash
-python curvatura_2d_aruco_dashboard_v2.py \
+python 2d_curvature.py \
   --camera 0 \
   --aruco-size 20 \
-  --aruco-spacing 225 130
+  --aruco-spacing 225 130 \
+  --aruco-margin 40
 ```
 
-### Process without ArUco calibration
-
-Results are reported in pixels unless a fixed scale is supplied:
+### Fixed scale without ArUco perspective correction
 
 ```bash
-python curvatura_2d_aruco_dashboard_v2.py --video cable.mp4
-```
-
-### Use a fixed scale without perspective correction
-
-```bash
-python curvatura_2d_aruco_dashboard_v2.py \
-  --video cable.mp4 \
+python 2d_curvature.py \
+  --video sample_videos/cable_curvature_demo.mp4 \
   --mm-per-pixel 0.25
 ```
 
-A fixed `mm/pixel` scale is appropriate only when perspective is sufficiently controlled and the object remains in the calibrated plane.
+### Load a saved calibration
+
+```bash
+python 2d_curvature.py \
+  --video sample_videos/cable_curvature_demo.mp4 \
+  --load-calibration \
+  --calibration-file calibration_aruco.json
+```
+
+Reuse a saved calibration only when the camera position, orientation, resolution, focus, zoom, measurement plane, and marker positions remain unchanged.
 
 ## Calibration behavior
 
-The application detects all four expected markers in consecutive frames. It then:
+The application detects the four expected markers in consecutive frames and then:
 
-1. takes the median detected corners across the requested calibration frames;
-2. estimates the native plane resolution from the apparent marker dimensions unless `--calibration-px-per-mm` is supplied;
+1. takes the median marker-corner positions across the calibration frames;
+2. estimates a native plane resolution unless `--calibration-px-per-mm` is supplied;
 3. calculates a four-center homography that is robust to individual marker rotation;
-4. uses all 16 marker corners when they are geometrically consistent;
-5. creates a top-down rectified image;
-6. stores the metric scale as millimeters per pixel;
-7. saves the calibration to JSON.
+4. uses all 16 marker corners when their geometry is consistent;
+5. applies the requested physical margin;
+6. creates a top-down rectified image;
+7. stores the metric scale as millimeters per pixel;
+8. saves the calibration to JSON.
 
-### Number of calibration frames
+### Calibration frame count
 
 ```bash
 --calibration-frames 5
 ```
 
-Using more consecutive frames reduces subpixel detection noise but requires all four markers to remain visible during the full collection interval.
+More consecutive frames can reduce subpixel detection noise, but all four markers must remain visible during the full collection interval.
 
 ### Rectified resolution
 
-By default, the program estimates a native `pixels/mm` value from the marker size in the source image.
+By default, the program estimates a native `pixels/mm` value from the apparent marker dimensions.
 
-To force a specific rectified resolution:
+Force a specific resolution with:
 
 ```bash
 --calibration-px-per-mm 2
 ```
 
-This creates a nominal output scale of:
+This corresponds to:
 
 ```text
 2 pixels/mm = 0.5 mm/pixel
 ```
 
-A larger `pixels/mm` value creates a larger rectified image but does not create new physical detail beyond the source image resolution.
-
-### Save and load calibration
-
-The default calibration file is:
-
-```text
-calibration_aruco.json
-```
-
-Load an existing calibration:
-
-```bash
-python curvatura_2d_aruco_dashboard_v2.py \
-  --video cable.mp4 \
-  --load-calibration \
-  --calibration-file calibration_aruco.json
-```
-
-Reuse a calibration only when the following remain unchanged:
-
-- camera position and orientation;
-- video resolution;
-- lens, zoom, and focus;
-- measurement plane;
-- physical marker positions.
-
-Press `C` during execution to discard the active planar calibration and collect a new one.
-
-## Camera pose panel
-
-When the four ArUco markers are visible, the application estimates and displays the camera pose relative to the marker plane.
-
-The pose panel includes:
-
-- ArUco-plane coordinate axes;
-- camera coordinate axes;
-- a schematic camera frustum;
-- camera distance from the plane origin;
-- camera height relative to the plane;
-- camera X and Y displacement;
-- approximate camera inclination;
-- pose reprojection error.
-
-If the real focal length in pixels is known, provide:
-
-```bash
---focal-px 1500
-```
-
-Without `--focal-px`, the application assumes a focal length equal to approximately `0.8 x image width`. This is a rough pose-estimation aid, not a replacement for intrinsic camera calibration.
-
-For more reliable camera pose, calibrate the camera intrinsically with a ChArUco board from the companion repository and extend the application to load the resulting camera matrix and distortion coefficients.
+A larger value creates a larger rectified image but does not create physical detail that is absent from the original video.
 
 ## Dashboard
 
-The default dashboard includes:
+The default dashboard contains:
 
 ```text
 +---------------------------+---------------+-------------------+
@@ -343,9 +458,17 @@ The default dashboard includes:
 +---------------------------+-----------------------------------+
 ```
 
-### Playback controls
+The polished dashboard theme includes:
 
-The dashboard provides:
+- grouped measurement cards;
+- calibration status;
+- dark-themed graphs;
+- playback controls;
+- a seek bar;
+- threshold and spline-smoothing sliders;
+- camera-pose visualization.
+
+## Playback controls
 
 - `-1s`: move backward approximately one second;
 - `<`: previous frame;
@@ -354,62 +477,67 @@ The dashboard provides:
 - `+1s`: move forward approximately one second;
 - progress bar: click or drag to seek through a video.
 
-Playback timing attempts to respect the source video FPS while accounting for processing time.
+When a video reaches the end, the application remains on the last frame. Pressing play again restarts the video from the beginning.
 
-### Segmentation controls
+## Segmentation controls
 
-The dashboard includes sliders for:
+### Threshold
 
-- threshold;
-- spline smoothing.
+Threshold separates the dark object from the light background.
 
-Threshold value `0` enables automatic Otsu thresholding.
+- `0` enables automatic Otsu thresholding;
+- a low manual value may fragment the cable;
+- a high manual value may include shadows or background regions.
 
-Increasing spline smoothing may reduce curvature noise but can flatten real bends. Start with a low value and increase only when necessary.
+Use the mask panel to verify that the cable is continuous and white while the background remains black.
+
+### Spline smoothing
+
+Spline smoothing controls how closely the final centerline follows pixel-level skeleton irregularities.
+
+- a low value preserves local bends but may produce noisy curvature;
+- a high value reduces noise but may flatten real bends and increase the reported radius;
+- start around `0.5` to `1.0 px` and increase gradually when necessary.
 
 ## Keyboard and mouse controls
 
 ```text
-Left click       Selects the nearest centerline point and displays R
-Right click      Clears the selected point
-C                Rebuilds the ArUco calibration
+Left click       Select nearest centerline point and display local radius
+Right click      Clear the selected point
+C                Rebuild ArUco calibration
 Space            Play or pause
-S                Saves a snapshot, CSV, and graph image
-Q or Esc         Exits
+S                Save snapshot, CSV, and graph image
+Q or Esc         Exit
 ```
 
 ## Segmentation assumptions
 
-The segmentation function assumes:
+The program assumes a dark object over a light background.
 
-```text
-dark object over a light background
-```
-
-The processing stages are:
+The segmentation pipeline uses:
 
 1. BGR-to-grayscale conversion;
 2. Gaussian blur;
-3. inverted binary threshold;
+3. inverted binary thresholding;
 4. morphological opening;
 5. morphological closing;
 6. connected-component analysis;
 7. selection of the largest valid component.
 
-The largest dark connected component is assumed to be the cable. Hands, shadows, dark supports, or other large objects can therefore cause incorrect segmentation.
+The largest dark connected component is assumed to be the cable. Hands, shadows, supports, and other large dark objects may therefore cause incorrect segmentation.
 
 For best results:
 
 - use a matte light background;
 - use a dark cable;
-- keep hands out of the measurement region;
+- keep hands outside the measurement area;
 - use uniform lighting;
 - avoid strong shadows and reflections;
 - keep the cable in the marker plane.
 
-## Centerline and curvature
+## Centerline, curvature, and radius
 
-The binary mask is reduced to a one-pixel skeleton. The application builds an eight-neighbor graph over the skeleton and uses two Dijkstra searches to estimate the longest geodesic path, which suppresses short skeleton branches.
+The binary mask is reduced to a one-pixel skeleton. The application builds an eight-neighbor graph and uses two Dijkstra searches to obtain the longest geodesic skeleton path while suppressing short branches.
 
 A parametric spline is fitted to the ordered points:
 
@@ -417,28 +545,55 @@ A parametric spline is fitted to the ordered points:
 x(t), y(t)
 ```
 
-The signed curvature is calculated as:
+Signed curvature is calculated as:
 
 ```text
 k = (x' y'' - y' x'') / (x'^2 + y'^2)^(3/2)
 ```
 
-The radius of curvature is:
+Radius of curvature is:
 
 ```text
 R = 1 / |k|
 ```
 
-The curve endpoints are trimmed from summary statistics because skeleton and spline derivatives are less stable near the ends.
+Curve endpoints are trimmed from summary statistics because skeleton and spline derivatives are less stable near the ends.
+
+## Camera pose panel
+
+When the four ArUco markers are visible, the application estimates and displays the camera pose relative to the marker plane.
+
+The panel includes:
+
+- ArUco-plane axes;
+- camera axes;
+- a schematic camera frustum;
+- distance from the plane origin;
+- camera height;
+- camera X and Y displacement;
+- approximate inclination;
+- pose reprojection error.
+
+If the real focal length in pixels is known, provide:
+
+```bash
+--focal-px 1500
+```
+
+Without `--focal-px`, the application assumes approximately `0.8 x image width`. This is only a rough pose-estimation aid and is not a substitute for intrinsic camera calibration.
 
 ## Output and snapshots
 
-Press `S` to save a snapshot in the output directory.
+Press `S` to save outputs in the directory provided by `--output`. The default is:
 
-The output can include:
+```text
+snapshots/
+```
+
+Outputs can include:
 
 - result image with centerline;
-- CSV containing arc length, X, Y, curvature, and radius;
+- CSV with arc length, X, Y, curvature, and radius;
 - PNG plots for curvature and radius.
 
 Example CSV columns:
@@ -451,58 +606,57 @@ curvature_1/mm
 radius_mm
 ```
 
-When no metric calibration is active, the units are pixels and inverse pixels.
+Without metric calibration, units are pixels and inverse pixels.
 
-## Important measurement limitations
+## Important limitations
 
 ### Planar assumption
 
-The ArUco homography assumes that:
+The homography assumes that all four markers and the cable lie approximately on the same physical plane. A cable segment moving toward or away from the camera cannot be measured correctly with one planar homography.
 
-- all four markers are on one plane;
-- the cable remains approximately in that same plane.
+### Margin and extrapolation
 
-A cable segment moving toward or away from the camera cannot be measured correctly with a single planar homography.
+`--aruco-margin` allows the rectified image to include areas beyond the markers. Those areas must still belong to the same plane. Error may grow farther away from the marker rectangle because the homography is being extrapolated.
 
 ### Resolution is not accuracy
 
-A rectified scale such as `2 px/mm` means that the output image is sampled at that nominal resolution. It does not guarantee `0.5 mm` measurement accuracy.
+A rectified scale such as `2 px/mm` describes output sampling. It does not guarantee `0.5 mm` measurement accuracy.
 
 Actual error also depends on:
 
-- marker dimension accuracy;
+- marker-size accuracy;
 - center-to-center spacing accuracy;
 - print quality;
-- image focus and resolution;
+- camera focus and resolution;
 - lens distortion;
 - segmentation quality;
 - spline smoothing;
 - cable thickness;
-- calibration-plane stability.
+- measurement-plane stability.
 
 ### RMS error
 
-When calibration uses exactly four marker centers, the reprojection error at those same four points can be nearly zero by construction. Validate the calibration with independent dimensions that were not used to calculate the homography.
+When calibration uses exactly four marker centers, reprojection error at those same points can approach zero by construction. Validate the calibration with independent known dimensions that were not used to calculate the homography.
 
 ### Recommended validation
 
-Place an independent physical reference in the measurement plane. For example, if a known 100 mm distance is present and the rectified scale is 2 px/mm, that reference should span approximately 200 pixels.
+Place an independent reference in the measurement plane. If a known 100 mm distance is present and the rectified scale is 2 px/mm, the reference should span approximately 200 pixels.
 
 Calculate:
 
 ```text
-absolute error = |measured - reference|
-relative error = absolute error / reference x 100%
+absolute error = |measured value - reference value|
+relative error = absolute error / reference value x 100%
 ```
 
-Repeat the validation in multiple parts of the rectified image.
+Repeat validation in several regions of the rectified image, including any area added through `--aruco-margin`.
 
 ## Command-line reference
 
-Display all arguments:
+Display all available arguments:
 
 ```bash
-python curvatura_2d_aruco_dashboard_v2.py --help
+python 2d_curvature.py --help
 ```
 
 Important options:
@@ -517,6 +671,7 @@ Important options:
 --aruco-spacing MM [MM]
 --aruco-ids TL TR BR BL
 --aruco-dict NAME
+--aruco-margin MM
 --calibration-px-per-mm VALUE
 --focal-px VALUE
 --calibration-frames COUNT
@@ -526,36 +681,6 @@ Important options:
 --dashboard-width PIXELS
 --dashboard-height PIXELS
 ```
-
-## Companion ArUco and ChArUco repository
-
-Use [casfervi/aruco_charuco](https://github.com/casfervi/aruco_charuco) to generate the ArUco markers and ChArUco calibration assets used by this project.
-
-For the default layout, generate marker IDs:
-
-```text
-0, 1, 2, 3
-```
-
-using:
-
-```text
-DICT_5X5_250
-```
-
-unless another dictionary is explicitly selected in both projects.
-
-Example marker-generation workflow in the companion repository:
-
-```bash
-python aruco_generation.py \
-  --num-markers 4 \
-  --start-id 0 \
-  --dictionary DICT_5X5_250 \
-  --output-dir markers
-```
-
-The companion repository can also generate a ChArUco board for intrinsic camera calibration.
 
 ## References
 
@@ -569,9 +694,9 @@ The companion repository can also generate a ChArUco board for intrinsic camera 
 ## Suggested next improvements
 
 - load a ChArUco-derived intrinsic camera matrix and distortion coefficients;
-- undistort each frame before planar ArUco calibration;
-- add independent calibration validation points;
+- undistort frames before planar ArUco calibration;
+- add independent calibration-validation points;
 - log frame-by-frame curvature statistics;
-- add temporal filtering for the centerline and curvature;
+- add temporal filtering for centerline and curvature;
 - support color or neural-network segmentation for uncontrolled backgrounds;
 - add stereo or depth sensing for true 3D cable curvature.

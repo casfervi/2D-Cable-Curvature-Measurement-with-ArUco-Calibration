@@ -83,6 +83,24 @@ from skimage.morphology import skeletonize
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 WHITE = (255, 255, 255)
 
+# Dashboard theme (OpenCV uses BGR colors)
+THEME = {
+    "background": (18, 21, 27),
+    "panel": (28, 33, 42),
+    "panel_alt": (34, 40, 50),
+    "header": (37, 44, 56),
+    "border": (65, 75, 92),
+    "text": (235, 239, 244),
+    "muted": (155, 166, 181),
+    "accent": (235, 154, 47),
+    "accent_soft": (92, 65, 35),
+    "success": (112, 201, 126),
+    "warning": (60, 190, 245),
+    "danger": (90, 95, 235),
+    "curve": (238, 164, 63),
+    "grid": (60, 68, 82),
+}
+
 WIN_DASHBOARD = "Analise de Curvatura"
 WIN_RESULT = "1 - Resultado"
 WIN_MASK = "2 - Mascara"
@@ -560,6 +578,8 @@ class ArucoLayout:
     ids: Tuple[int, ...] = (0, 1, 2, 3)
     dictionary: str = "DICT_5X5_250"
     pixels_per_mm: float = 0.0   # 0 = automatico (resolucao nativa da camera)
+    margin_mm: float = 0.0
+    
 
     def marker_corners_mm(self) -> np.ndarray:
         """
@@ -586,12 +606,21 @@ class ArucoLayout:
 
         return centers[:, None, :] + offsets[None, :, :]
 
+    # @property
+    # def output_size(self) -> Tuple[int, int]:
+    #     """Tamanho (largura, altura) da imagem retificada em pixels."""
+    #     width = (self.spacing_x_mm + self.marker_size_mm) * self.pixels_per_mm
+    #     height = (self.spacing_y_mm + self.marker_size_mm) * self.pixels_per_mm
+    #     return int(round(width)), int(round(height))
+    
     @property
     def output_size(self) -> Tuple[int, int]:
-        """Tamanho (largura, altura) da imagem retificada em pixels."""
-        width = (self.spacing_x_mm + self.marker_size_mm) * self.pixels_per_mm
-        height = (self.spacing_y_mm + self.marker_size_mm) * self.pixels_per_mm
-        return int(round(width)), int(round(height))
+        width_mm = (self.spacing_x_mm + self.marker_size_mm + 2.0 * self.margin_mm)    
+        height_mm = (self.spacing_y_mm + self.marker_size_mm + 2.0 * self.margin_mm)
+        width_px = width_mm * self.pixels_per_mm
+        height_px = height_mm * self.pixels_per_mm
+    
+        return (int(round(width_px)),int(round(height_px)))
 
 
 @dataclass
@@ -649,7 +678,8 @@ def native_pixels_per_mm(image_corners, layout) -> float:
     sides = np.linalg.norm(image_corners - np.roll(image_corners, -1, axis=1), axis=2)
     ppm = float(np.median(sides)) / layout.marker_size_mm
 
-    largest_mm = max(layout.spacing_x_mm, layout.spacing_y_mm) + layout.marker_size_mm
+    largest_mm = (max(layout.spacing_x_mm, layout.spacing_y_mm)
+                  + layout.marker_size_mm + 2.0 * layout.margin_mm)
     ppm = min(ppm, MAX_RECTIFIED_SIDE_PX / largest_mm)
 
     return max(ppm, 0.5)
@@ -677,21 +707,29 @@ def compute_calibration(samples, layout) -> Optional[PlanarCalibration]:
     layout = replace(layout, pixels_per_mm=ppm)
 
     half_marker_px = layout.marker_size_mm * ppm / 2.0
+    margin_px = (layout.margin_mm * ppm)
     spacing_x_px = layout.spacing_x_mm * ppm
     spacing_y_px = layout.spacing_y_mm * ppm
 
+    # destination_centers = np.array([
+    #     [half_marker_px, half_marker_px],
+    #     [half_marker_px + spacing_x_px, half_marker_px],
+    #     [half_marker_px + spacing_x_px, half_marker_px + spacing_y_px],
+    #     [half_marker_px, half_marker_px + spacing_y_px]], dtype=np.float32)
+
     destination_centers = np.array([
-        [half_marker_px, half_marker_px],
-        [half_marker_px + spacing_x_px, half_marker_px],
-        [half_marker_px + spacing_x_px, half_marker_px + spacing_y_px],
-        [half_marker_px, half_marker_px + spacing_y_px]], dtype=np.float32)
+        [margin_px + half_marker_px, margin_px + half_marker_px],
+        [margin_px + half_marker_px + spacing_x_px, margin_px + half_marker_px],
+        [margin_px + half_marker_px + spacing_x_px, margin_px + half_marker_px + spacing_y_px],
+        [margin_px + half_marker_px, margin_px + half_marker_px + spacing_y_px]], dtype=np.float32)
 
     homography = cv2.getPerspectiveTransform(image_centers, destination_centers)
     if homography is None:
         return None
 
     image_points = image_corners.reshape(-1, 1, 2).astype(np.float32)
-    expected_corners = (layout.marker_corners_mm() * ppm).reshape(-1, 1, 2).astype(np.float32)
+    # expected_corners = (layout.marker_corners_mm() * ppm).reshape(-1, 1, 2).astype(np.float32)
+    expected_corners = ((layout.marker_corners_mm() + layout.margin_mm) * ppm).reshape(-1, 1, 2).astype(np.float32)
 
     method = "4 centros"
     projected = cv2.perspectiveTransform(image_points, homography)
@@ -1219,19 +1257,105 @@ def draw_information_panel(frame, lines):
     return output
 
 
+def draw_rounded_rectangle(image, pt1, pt2, color, radius=10, thickness=-1):
+    """Draws a rounded rectangle using only OpenCV primitives."""
+    x1, y1 = pt1
+    x2, y2 = pt2
+    radius = int(max(1, min(radius, (x2 - x1) // 2, (y2 - y1) // 2)))
+    if thickness < 0:
+        cv2.rectangle(image, (x1 + radius, y1), (x2 - radius, y2), color, cv2.FILLED)
+        cv2.rectangle(image, (x1, y1 + radius), (x2, y2 - radius), color, cv2.FILLED)
+        for center in ((x1 + radius, y1 + radius), (x2 - radius, y1 + radius),
+                       (x1 + radius, y2 - radius), (x2 - radius, y2 - radius)):
+            cv2.circle(image, center, radius, color, cv2.FILLED, cv2.LINE_AA)
+    else:
+        cv2.line(image, (x1 + radius, y1), (x2 - radius, y1), color, thickness, cv2.LINE_AA)
+        cv2.line(image, (x1 + radius, y2), (x2 - radius, y2), color, thickness, cv2.LINE_AA)
+        cv2.line(image, (x1, y1 + radius), (x1, y2 - radius), color, thickness, cv2.LINE_AA)
+        cv2.line(image, (x2, y1 + radius), (x2, y2 - radius), color, thickness, cv2.LINE_AA)
+        cv2.ellipse(image, (x1 + radius, y1 + radius), (radius, radius), 180, 0, 90, color, thickness, cv2.LINE_AA)
+        cv2.ellipse(image, (x2 - radius, y1 + radius), (radius, radius), 270, 0, 90, color, thickness, cv2.LINE_AA)
+        cv2.ellipse(image, (x2 - radius, y2 - radius), (radius, radius), 0, 0, 90, color, thickness, cv2.LINE_AA)
+        cv2.ellipse(image, (x1 + radius, y2 - radius), (radius, radius), 90, 0, 90, color, thickness, cv2.LINE_AA)
+
+
+def put_text_right(image, text, right_x, y, scale, color, thickness=1):
+    size = cv2.getTextSize(text, FONT, scale, thickness)[0]
+    cv2.putText(image, text, (right_x - size[0], y), FONT, scale,
+                color, thickness, cv2.LINE_AA)
+
+
 def create_info_view(lines, width=480, height=330):
-    """Cria um painel independente para metricas e estado da calibracao."""
-    image = np.full((height, width, 3), 245, dtype=np.uint8)
-    cv2.putText(image, "MEDIDAS E ESTADO", (16, 30), FONT, 0.6, (30, 30, 30), 1, cv2.LINE_AA)
-    cv2.line(image, (14, 42), (width - 14, 42), (150, 150, 150), 1)
-    y = 72
-    for text in lines:
-        cv2.putText(image, text, (18, y), FONT, 0.5, (35, 35, 35), 1, cv2.LINE_AA)
-        y += 30
-        if y > height - 12:
+    """Creates a card-based information panel with visual hierarchy."""
+    # Altura necessaria (mesmos passos verticais de baixo): nada fica fora da imagem
+    needed = 55
+    for row in lines:
+        kind = "plain" if isinstance(row, str) else row[0]
+        if kind == "section":
+            needed += (5 if needed > 60 else 0) + 15
+        elif kind in ("status_ok", "status_warn"):
+            needed += 32
+        elif kind in ("metric", "highlight"):
+            needed += 31
+        else:
+            needed += 24
+    height = max(height, needed + 4)
+
+    image = np.full((height, width, 3), THEME["background"], dtype=np.uint8)
+    margin = 14
+    y = 14
+
+    # Panel heading
+    cv2.putText(image, "LIVE ANALYSIS", (margin, 25), FONT, 0.52,
+                THEME["text"], 1, cv2.LINE_AA)
+    cv2.circle(image, (width - 24, 20), 5, THEME["success"], cv2.FILLED, cv2.LINE_AA)
+    cv2.line(image, (margin, 36), (width - margin, 36), THEME["border"], 1)
+    y = 55
+
+    for row in lines:
+        if isinstance(row, str):
+            # Backwards compatibility for calibration-progress messages.
+            row = ("plain", row)
+        kind = row[0]
+
+        if kind == "section":
+            if y > 60:
+                y += 5
+            cv2.putText(image, row[1], (margin, y), FONT, 0.38,
+                        THEME["accent"], 1, cv2.LINE_AA)
+            y += 15
+            continue
+
+        if kind in ("status_ok", "status_warn"):
+            color = THEME["success"] if kind == "status_ok" else THEME["warning"]
+            draw_rounded_rectangle(image, (margin, y - 11), (width - margin, y + 13),
+                                   THEME["panel_alt"], radius=7)
+            cv2.circle(image, (margin + 12, y + 1), 4, color, cv2.FILLED, cv2.LINE_AA)
+            cv2.putText(image, row[1], (margin + 24, y + 6), FONT, 0.42,
+                        THEME["text"], 1, cv2.LINE_AA)
+            y += 32
+            continue
+
+        if kind in ("metric", "highlight"):
+            label, value = row[1], row[2]
+            card_color = THEME["accent_soft"] if kind == "highlight" else THEME["panel"]
+            value_color = THEME["accent"] if kind == "highlight" else THEME["text"]
+            draw_rounded_rectangle(image, (margin, y - 12), (width - margin, y + 14),
+                                   card_color, radius=7)
+            cv2.putText(image, label, (margin + 10, y + 6), FONT, 0.39,
+                        THEME["muted"], 1, cv2.LINE_AA)
+            put_text_right(image, value, width - margin - 10, y + 6, 0.41,
+                           value_color, 1)
+            y += 31
+            continue
+
+        cv2.putText(image, str(row[1]), (margin, y), FONT, 0.40,
+                    THEME["text"], 1, cv2.LINE_AA)
+        y += 24
+
+        if y > height - 16:
             break
     return image
-
 
 def build_rectification_view(original_frame, corrected_frame, calibrated):
     """Compara a perspectiva original com a imagem corrigida pelo ArUco."""
@@ -1265,32 +1389,47 @@ def build_rectification_view(original_frame, corrected_frame, calibrated):
 
 
 def build_info_lines(analysis, stats, settings, calibration, selected_radius):
+    """Creates structured rows for the information panel."""
     unit = settings.unit
-
-    lines = [
-        f"Comprimento: {stats.length:.2f} {unit}",
-        f"Curvatura maxima: {stats.max_curvature:.5f} 1/{unit}",
-        f"Raio minimo: {stats.min_radius:.2f} {unit}",
-        f"Desvio maximo da reta: {stats.max_line_deviation:.2f} {unit}",
-        f"Area segmentada: {analysis.area} px2",
+    rows = [
+        ("section", "MEASUREMENT"),
+        ("metric", "Total length", f"{stats.length:.2f} {unit}"),
+        ("metric", "Maximum curvature", f"{stats.max_curvature:.5f} 1/{unit}"),
+        ("metric", "Minimum radius", f"{stats.min_radius:.2f} {unit}"),
+        ("metric", "Maximum deviation", f"{stats.max_line_deviation:.2f} {unit}"),
+        ("metric", "Segmented area", f"{analysis.area:,} px2"),
     ]
 
     if selected_radius is not None:
-        lines.append(
-            f"Ponto selecionado: R = {selected_radius:.2f} {unit}"
-            if np.isfinite(selected_radius)
-            else "Ponto selecionado: R = inf"
-        )
+        value = (f"{selected_radius:.2f} {unit}"
+                 if np.isfinite(selected_radius) else "infinite")
+        rows.extend([
+            ("section", "SELECTION"),
+            ("highlight", "Local radius", value),
+        ])
 
+    rows.append(("section", "CALIBRATION"))
     if calibration is not None:
-        lines.append(f"Calibracao ArUco ({calibration.method}): RMS {calibration.rms_error_mm:.3f} mm")
+        ppm = 1.0 / calibration.mm_per_pixel
+        rows.extend([
+            ("status_ok", "ArUco calibration active"),
+            ("metric", "Method", calibration.method),
+            ("metric", "Scale", f"{calibration.mm_per_pixel:.5f} mm/px"),
+            ("metric", "Resolution", f"{ppm:.2f} px/mm"),
+            ("metric", "Reprojection RMS", f"{calibration.rms_error_mm:.3f} mm"),
+        ])
     elif settings.calibrated:
-        lines.append(f"Escala fixa: {settings.mm_per_pixel:.5f} mm/px")
+        rows.extend([
+            ("status_warn", "Fixed scale active"),
+            ("metric", "Scale", f"{settings.mm_per_pixel:.5f} mm/px"),
+            ("metric", "Perspective", "not corrected"),
+        ])
     else:
-        lines.append("Sem calibracao (resultados em px)")
-
-    return lines
-
+        rows.extend([
+            ("status_warn", "No metric calibration"),
+            ("metric", "Output unit", "pixels"),
+        ])
+    return rows
 
 def build_mask_view(mask, threshold_value, used_threshold):
     """Mascara em BGR com o limiar escrito (a mascara original nao e alterada)."""
@@ -1300,7 +1439,7 @@ def build_mask_view(mask, threshold_value, used_threshold):
 
     cv2.putText(
         view, f"Threshold: {int(used_threshold)} ({mode})",
-        (20, 30), FONT, 0.7, (0, 255, 0), 2, cv2.LINE_AA,
+        (20, 30), FONT, 0.7, THEME["success"], 2, cv2.LINE_AA,
     )
 
     return view
@@ -1310,28 +1449,36 @@ def create_graph(
     arc_length, values, title, y_limits, x_unit,
     marker_x=None, width=700, height=300,
 ):
-    """Grafico simples desenhado com OpenCV (valores fora dos limites sao cortados)."""
-
-    graph = np.full((height, width, 3), 255, dtype=np.uint8)
-
-    left, right, top, bottom = 80, 25, 40, 50
+    """Dark themed OpenCV graph with grid, labels, and selection marker."""
+    graph = np.full((height, width, 3), THEME["background"], dtype=np.uint8)
+    left, right, top, bottom = 74, 24, 42, 48
     plot_w = width - left - right
     plot_h = height - top - bottom
-    black = (0, 0, 0)
 
-    cv2.rectangle(graph, (left, top), (width - right, height - bottom), black, 1)
-    cv2.putText(graph, title, (10, 25), FONT, 0.55, black, 1, cv2.LINE_AA)
-    cv2.putText(
-        graph, f"Posicao ao longo do cabo ({x_unit})",
-        (left + 150, height - 12), FONT, 0.5, black, 1, cv2.LINE_AA,
-    )
+    cv2.putText(graph, title, (18, 27), FONT, 0.55,
+                THEME["text"], 1, cv2.LINE_AA)
+    cv2.putText(graph, f"Position along cable ({x_unit})",
+                (left + max(10, plot_w // 2 - 90), height - 13), FONT, 0.42,
+                THEME["muted"], 1, cv2.LINE_AA)
+
+    # Plot card and soft grid
+    draw_rounded_rectangle(graph, (left, top), (width - right, height - bottom),
+                           THEME["panel"], radius=8)
+    for i in range(1, 5):
+        gy = top + int(i * plot_h / 5)
+        cv2.line(graph, (left, gy), (width - right, gy), THEME["grid"], 1, cv2.LINE_AA)
+    for i in range(1, 6):
+        gx = left + int(i * plot_w / 6)
+        cv2.line(graph, (gx, top), (gx, height - bottom), THEME["grid"], 1, cv2.LINE_AA)
 
     if arc_length is None or values is None:
+        cv2.putText(graph, "Waiting for a valid centerline...",
+                    (left + 24, top + plot_h // 2), FONT, 0.48,
+                    THEME["muted"], 1, cv2.LINE_AA)
         return graph
 
     y_min, y_max = y_limits
     x_span = arc_length[-1] - arc_length[0]
-
     if x_span <= 1e-12 or y_max - y_min <= 1e-12:
         return graph
 
@@ -1339,27 +1486,35 @@ def create_graph(
         fraction = (np.clip(value, y_min, y_max) - y_min) / (y_max - y_min)
         return height - bottom - fraction * plot_h
 
-    for value in (y_min, y_max):
-        cv2.putText(
-            graph, f"{value:.3g}", (5, int(to_graph_y(value)) + 4),
-            FONT, 0.4, black, 1, cv2.LINE_AA,
-        )
+    for value in (y_min, (y_min + y_max) / 2, y_max):
+        cv2.putText(graph, f"{value:.3g}", (8, int(to_graph_y(value)) + 4),
+                    FONT, 0.36, THEME["muted"], 1, cv2.LINE_AA)
 
     if y_min < 0.0 < y_max:
         zero_y = int(to_graph_y(0.0))
-        cv2.line(graph, (left, zero_y), (width - right, zero_y), (170, 170, 170), 1)
+        cv2.line(graph, (left, zero_y), (width - right, zero_y),
+                 (105, 112, 125), 1, cv2.LINE_AA)
 
     graph_x = left + (arc_length - arc_length[0]) / x_span * plot_w
     points = np.column_stack((graph_x, to_graph_y(values))).astype(np.int32)
+    cv2.polylines(graph, [points], False, THEME["curve"], 2, cv2.LINE_AA)
 
-    cv2.polylines(graph, [points], False, (255, 0, 0), 2, cv2.LINE_AA)
+    # Subtle fill under the curve when it is non-negative.
+    if y_min >= 0 and len(points) > 1:
+        polygon = np.vstack((points, [points[-1, 0], height - bottom],
+                             [points[0, 0], height - bottom])).astype(np.int32)
+        overlay = graph.copy()
+        cv2.fillPoly(overlay, [polygon], THEME["accent_soft"], cv2.LINE_AA)
+        graph = cv2.addWeighted(overlay, 0.24, graph, 0.76, 0)
+        cv2.polylines(graph, [points], False, THEME["curve"], 2, cv2.LINE_AA)
 
     if marker_x is not None:
         mx = int(left + (marker_x - arc_length[0]) / x_span * plot_w)
-        cv2.line(graph, (mx, top), (mx, height - bottom), (255, 0, 255), 1)
-
+        cv2.line(graph, (mx, top), (mx, height - bottom),
+                 (220, 75, 210), 1, cv2.LINE_AA)
+        cv2.circle(graph, (mx, int(to_graph_y(np.interp(marker_x, arc_length, values)))),
+                   4, (220, 75, 210), cv2.FILLED, cv2.LINE_AA)
     return graph
-
 
 def build_graphs(unit, centerline=None, stats=None, selected=None):
     """Retorna (grafico de curvatura, grafico de raio); vazios se nao houver curva."""
@@ -1606,20 +1761,28 @@ def show_fit(window, image):
 
 
 def make_panel(image, title, width, height):
-    """Painel com faixa de titulo propria (nao cobre a imagem)."""
+    """Creates a polished dashboard panel without covering its content."""
+    gutter = 4
+    inner_w = max(1, width - 2 * gutter)
+    inner_h = max(1, height - 2 * gutter)
+    content_h = max(1, inner_h - TITLE_HEIGHT)
+    content, scale, x0, y0 = resize_with_letterbox(image, inner_w, content_h)
 
-    content, scale, x0, y0 = resize_with_letterbox(
-        image, width, max(1, height - TITLE_HEIGHT)
-    )
-
-    panel = np.zeros((TITLE_HEIGHT + content.shape[0], width, 3), dtype=np.uint8)
-    panel[:TITLE_HEIGHT] = (30, 30, 30)
-    panel[TITLE_HEIGHT:] = content
-
-    cv2.putText(panel, title, (10, 21), FONT, 0.5, WHITE, 1, cv2.LINE_AA)
-
-    return panel, scale, x0, y0
-
+    panel = np.full((height, width, 3), THEME["background"], dtype=np.uint8)
+    x1, y1 = gutter, gutter
+    x2, y2 = width - gutter - 1, height - gutter - 1
+    draw_rounded_rectangle(panel, (x1, y1), (x2, y2), THEME["panel"], radius=9)
+    cv2.rectangle(panel, (x1 + 1, y1 + 1), (x2 - 1, y1 + TITLE_HEIGHT),
+                  THEME["header"], cv2.FILLED)
+    cv2.rectangle(panel, (x1 + 1, y1 + TITLE_HEIGHT - 2),
+                  (x2 - 1, y1 + TITLE_HEIGHT), THEME["accent"], cv2.FILLED)
+    panel[y1 + TITLE_HEIGHT:y1 + TITLE_HEIGHT + content.shape[0],
+          x1:x1 + content.shape[1]] = content
+    cv2.putText(panel, title, (x1 + 12, y1 + 20), FONT, 0.46,
+                THEME["text"], 1, cv2.LINE_AA)
+    draw_rounded_rectangle(panel, (x1, y1), (x2, y2), THEME["border"],
+                           radius=9, thickness=1)
+    return panel, scale, x0 + x1, y0 + y1
 
 def _format_time(seconds):
     seconds = max(float(seconds), 0.0)
@@ -1651,13 +1814,13 @@ def make_controls_panel(width, height, paused, frame_index, total_frames,
     RELATIVAS ao painel.
     """
 
-    panel = np.full((height, width, 3), 45, dtype=np.uint8)
-    panel[:TITLE_HEIGHT] = (30, 30, 30)
+    panel = np.full((height, width, 3), THEME["panel"], dtype=np.uint8)
+    panel[:TITLE_HEIGHT] = THEME["header"]
     cv2.putText(panel, "CONTROLES", (10, 21), FONT, 0.5, WHITE, 1, cv2.LINE_AA)
 
-    light = (235, 235, 235)
-    dim = (140, 140, 140)
-    accent = (0, 170, 255)
+    light = THEME["text"]
+    dim = THEME["muted"]
+    accent = THEME["accent"]
     margin = 24
 
     # ---- reproducao ----
@@ -1714,7 +1877,8 @@ def make_controls_panel(width, height, paused, frame_index, total_frames,
     threshold = int(slider_values.get("threshold", 0))
     smoothing = float(slider_values.get("smoothing", 1.0))
     slider_specs = [
-        ("threshold", "Threshold: auto (Otsu)" if threshold <= 0 else f"Threshold: {threshold}", 206),
+        ("threshold", "Threshold: auto (Otsu)" 
+         if threshold <= 0 else f"Threshold: {threshold}", 206),
         ("smoothing", f"Suavizacao da spline: {smoothing:.1f} px", 254),
     ]
 
@@ -1731,9 +1895,14 @@ def make_controls_panel(width, height, paused, frame_index, total_frames,
 
     # ---- dicas ----
     cv2.putText(panel, "Clique no cabo: mostra R | Botao direito: limpa",
-                (margin, height - 34), FONT, 0.4, dim, 1, cv2.LINE_AA)
+                (margin, height - 74), FONT, 0.4, dim, 1, cv2.LINE_AA)
     cv2.putText(panel, "ESPACO pausa | C calibra | S snapshot | Q sai",
+                (margin, height - 54), FONT, 0.4, dim, 1, cv2.LINE_AA)
+    cv2.putText(panel, "Threshold controla a separacao entre objeto escuro e fundo claro",
+                (margin, height - 34), FONT, 0.4, dim, 1, cv2.LINE_AA)
+    cv2.putText(panel, "Suavizacao da spline ajusta a curva de ajuste da mascara/skeleton",
                 (margin, height - 14), FONT, 0.4, dim, 1, cv2.LINE_AA)
+
 
     return panel, buttons, sliders, progress
 
@@ -2384,7 +2553,9 @@ def build_parser():
         help="JSON onde a calibracao e salva/carregada.")
     aruco.add_argument("--load-calibration", action="store_true",
         help="Carrega --calibration-file em vez de detectar os marcadores.")
-
+    aruco.add_argument("--aruco-margin", type=float, default=0.0, metavar="MM",
+        help=("Margem adicional ao redor dos marcadores na imagem retificada, em mm."))
+    
     display = parser.add_argument_group("exibicao")
     display.add_argument("--display", choices=("separate", "dashboard"), default="dashboard",
         help="Modo visual.")
@@ -2419,7 +2590,10 @@ def build_layout(args, parser) -> Optional[ArucoLayout]:
             "--aruco-spacing e a distancia CENTRO A CENTRO e deve ser maior "
             "que --aruco-size (senao os marcadores se sobrepoem)."
         )
-
+    
+    if args.aruco_margin < 0:
+        parser.error("--aruco-margin nao pode ser negativa.")
+    
     if len(set(args.aruco_ids)) != 4:
         parser.error("--aruco-ids exige 4 ids diferentes.")
 
@@ -2437,6 +2611,7 @@ def build_layout(args, parser) -> Optional[ArucoLayout]:
         ids=tuple(args.aruco_ids),
         dictionary=args.aruco_dict,
         pixels_per_mm=args.calibration_px_per_mm or 0.0,
+        margin_mm=args.aruco_margin,
     )
 
 
