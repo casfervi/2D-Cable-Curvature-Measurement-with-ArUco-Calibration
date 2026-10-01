@@ -4,7 +4,7 @@ Created on Mon Sep 28 16:11:08 2026
 
 @author: vinicius.ferreira
 
-curvatura_2d_aruco.py
+2d_curvature.py
 
 Mede a curvatura e o raio de curvatura de um cabo (objeto escuro sobre
 fundo claro), em video ou webcam, com calibracao por marcadores ArUco.
@@ -53,11 +53,11 @@ Pose da camera:
     o valor real (distancia e altura escalam com ela; a inclinacao muda pouco).
 
 Exemplos:
-    python curvatura_2d_aruco.py --video cabo.mp4 --aruco-size 40 --aruco-spacing 300 200
-    python curvatura_2d_aruco.py --video cabo.mp4 --aruco-size 40 --aruco-spacing 300 200 --focal-px 1500
-    python curvatura_2d_aruco.py --camera 0 --aruco-size 40 --aruco-spacing 250
-    python curvatura_2d_aruco.py --video cabo.mp4 --load-calibration
-    python curvatura_2d_aruco.py --video cabo.mp4 --mm-per-pixel 0.25
+    python 2d_curvature.py --video cabo.mp4 --aruco-size 40 --aruco-spacing 300 200
+    python 2d_curvature.py --video cabo.mp4 --aruco-size 40 --aruco-spacing 300 200 --focal-px 1500
+    python 2d_curvature.py --camera 0 --aruco-size 40 --aruco-spacing 250
+    python 2d_curvature.py --video cabo.mp4 --load-calibration
+    python 2d_curvature.py --video cabo.mp4 --mm-per-pixel 0.25
 """
 
 import argparse
