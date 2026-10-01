@@ -68,13 +68,11 @@ python 2d_curvature.py --video "sample_videos\cable_curvature_demo.mp4"
 
 A demonstration video can be added below after uploading it through the GitHub README editor.
 
-<!--
-Replace the placeholder below with the GitHub user-attachment URL generated
-when the MP4 file is dragged into the README editor.
 
-Example:
-https://github.com/user-attachments/assets/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
--->
+
+https://github.com/user-attachments/assets/07d50391-cbe8-43f8-bf89-c600c98c09b6
+
+
 
 **Demo video:** _add the uploaded video URL here_
 
@@ -691,12 +689,3 @@ Important options:
 - [OpenCV: Calibration with ArUco and ChArUco](https://docs.opencv.org/4.13.0/da/d13/tutorial_aruco_calibration.html)
 - [OpenCV: Camera Calibration](https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html)
 
-## Suggested next improvements
-
-- load a ChArUco-derived intrinsic camera matrix and distortion coefficients;
-- undistort frames before planar ArUco calibration;
-- add independent calibration-validation points;
-- log frame-by-frame curvature statistics;
-- add temporal filtering for centerline and curvature;
-- support color or neural-network segmentation for uncontrolled backgrounds;
-- add stereo or depth sensing for true 3D cable curvature.
