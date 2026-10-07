@@ -66,7 +66,6 @@ python 2d_curvature.py --video "sample_videos\cable_curvature_demo.mp4"
 
 ## Video demonstration
 
-A demonstration video can be added below after uploading it through the GitHub README editor.
 
 
 
@@ -74,15 +73,6 @@ https://github.com/user-attachments/assets/07d50391-cbe8-43f8-bf89-c600c98c09b6
 
 
 
-The demonstration should ideally show:
-
-- detection of the four ArUco markers;
-- planar calibration;
-- the original and rectified views;
-- cable segmentation and the binary mask;
-- centerline extraction;
-- curvature and radius plots;
-- playback controls and parameter sliders.
 
 ## Processing pipeline
 
