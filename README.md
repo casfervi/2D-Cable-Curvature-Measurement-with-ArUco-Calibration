@@ -74,14 +74,6 @@ https://github.com/user-attachments/assets/07d50391-cbe8-43f8-bf89-c600c98c09b6
 
 
 
-**Demo video:** _add the uploaded video URL here_
-
-<!-- VIDEO_PLACEHOLDER_START -->
-
-https://github.com/user-attachments/assets/REPLACE-WITH-VIDEO-ID
-
-<!-- VIDEO_PLACEHOLDER_END -->
-
 The demonstration should ideally show:
 
 - detection of the four ArUco markers;
